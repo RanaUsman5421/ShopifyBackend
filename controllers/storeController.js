@@ -1,17 +1,57 @@
 import Store from "../models/Store.js";
+import Order from "../models/Order.js";
 
 function normalizeStoreKey(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+async function getOrdersForStore(store) {
+  const filters = [];
+
+  if (store?._id) {
+    filters.push({ storeId: store._id });
+  }
+
+  if (store?.shopDomain) {
+    filters.push({ shopDomain: normalizeStoreKey(store.shopDomain) });
+  }
+
+  if (store?.storeName) {
+    filters.push({ storeName: store.storeName });
+  }
+
+  if (filters.length === 0) {
+    return Array.isArray(store?.orders) ? store.orders : [];
+  }
+
+  const orders = await Order.find(filters.length === 1 ? filters[0] : { $or: filters })
+    .sort({ createdAt: -1, orderNumber: -1 })
+    .lean()
+    .maxTimeMS(10000);
+
+  if (orders.length > 0) {
+    return orders;
+  }
+
+  return Array.isArray(store?.orders) ? store.orders : [];
+}
+
+async function attachOrders(store) {
+  return {
+    ...store,
+    orders: await getOrdersForStore(store),
+  };
+}
+
 export const getAllStoresData = async (req, res) => {
   try {
     const stores = await Store.find({}).lean().maxTimeMS(10000);
+    const storesWithOrders = await Promise.all(stores.map(attachOrders));
 
     return res.status(200).json({
       success: true,
-      count: stores.length,
-      data: stores,
+      count: storesWithOrders.length,
+      data: storesWithOrders,
     });
   } catch (error) {
     console.error("Error fetching stores:", error);
@@ -44,9 +84,7 @@ export const getStoreData = async (req, res) => {
     })
       .lean()
       .maxTimeMS(10000);
-    const store =
-      stores.find((storeItem) => Array.isArray(storeItem.orders) && storeItem.orders.length > 0) ||
-      stores[0];
+    const store = stores[0];
 
     if (!store) {
       return res.status(404).json({
@@ -57,7 +95,7 @@ export const getStoreData = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: store,
+      data: await attachOrders(store),
     });
   } catch (error) {
     console.error("Error fetching store:", error);

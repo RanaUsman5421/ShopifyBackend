@@ -1,8 +1,9 @@
-import crypto from "crypto";
+﻿import crypto from "crypto";
 import mongoose from "mongoose";
 
 import DashboardUser from "../models/DashboardUser.js";
 import Store from "../models/Store.js";
+import Order from "../models/Order.js";
 
 const sampleUsers = [
   {
@@ -79,19 +80,15 @@ function normalizeStoreKey(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-async function getOrdersFromMongoDB(linkedStore) {
+async function getOrdersFromMongoDB(linkedStore, store = null) {
   try {
-    // Get the MongoDB connection from mongoose
-    const mongoConnection = mongoose.connection;
-    
-    if (!mongoConnection.db) {
-      console.warn("MongoDB connection not available");
-      return [];
-    }
-
-    const shopDomain = normalizeStoreKey(linkedStore?.shopDomain);
-    const storeName = String(linkedStore?.storeName || "").trim();
+    const shopDomain = normalizeStoreKey(linkedStore?.shopDomain || store?.shopDomain);
+    const storeName = String(linkedStore?.storeName || store?.storeName || "").trim();
     const filters = [];
+
+    if (store?._id) {
+      filters.push({ storeId: store._id });
+    }
 
     if (shopDomain) {
       filters.push({ shopDomain });
@@ -105,13 +102,30 @@ async function getOrdersFromMongoDB(linkedStore) {
       return [];
     }
 
-    // Query the Orders collection directly
-    const ordersCollection = mongoConnection.db.collection("Orders");
-    const orderRecord = await ordersCollection.findOne(
-      filters.length === 1 ? filters[0] : { $or: filters }
-    );
+    const query = filters.length === 1 ? filters[0] : { $or: filters };
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1, orderNumber: -1 })
+      .lean()
+      .maxTimeMS(10000);
 
-    return Array.isArray(orderRecord?.orders) ? orderRecord.orders : [];
+    if (orders.length > 0) {
+      return orders;
+    }
+
+    if (!mongoose.connection.db) {
+      return [];
+    }
+
+    const legacyRecord = await mongoose.connection.db.collection("Orders").findOne({
+      ...query,
+      orders: { $type: "array" },
+    });
+
+    if (Array.isArray(legacyRecord?.orders)) {
+      return legacyRecord.orders;
+    }
+
+    return Array.isArray(store?.orders) ? store.orders : [];
   } catch (error) {
     console.error("Error fetching orders from MongoDB:", error);
     return [];
@@ -271,7 +285,6 @@ async function findStoreDocumentForLinkedStore(linkedStore) {
     .maxTimeMS(10000);
 
   return (
-    stores.find((store) => Array.isArray(store.orders) && store.orders.length > 0) ||
     stores.find((store) => normalizeStoreKey(store.shopDomain) === shopDomain) ||
     stores[0] ||
     null
@@ -280,22 +293,13 @@ async function findStoreDocumentForLinkedStore(linkedStore) {
 
 async function buildStorePayload(linkedStore) {
   const store = await findStoreDocumentForLinkedStore(linkedStore);
-
-  // Try to get orders from Store model first, then fallback to MongoDB Orders collection
-  let orders = [];
-  
-  if (store && Array.isArray(store.orders) && store.orders.length > 0) {
-    orders = store.orders;
-  } else {
-    // Fallback to fetching from MongoDB Orders collection
-    orders = await getOrdersFromMongoDB(linkedStore);
-  }
+  const orders = await getOrdersFromMongoDB(linkedStore, store);
 
   if (!store) {
     return {
       shopDomain: linkedStore?.shopDomain || null,
       storeName: linkedStore?.storeName || linkedStore?.shopDomain || null,
-      orders: orders,
+      orders,
       settings: normalizeStoreSettings(),
       updatedAt: null,
       linkedAt: linkedStore?.linkedAt || null,
@@ -306,7 +310,7 @@ async function buildStorePayload(linkedStore) {
     _id: store._id,
     shopDomain: store.shopDomain || linkedStore?.shopDomain || null,
     storeName: store.storeName,
-    orders: orders,
+    orders,
     settings: normalizeStoreSettings(store.settings),
     updatedAt: store.updatedAt,
     linkedAt: linkedStore?.linkedAt || null,
@@ -352,7 +356,6 @@ async function upsertLinkedStoreDocument({ shopDomain, storeName, dashboardUserI
     },
     $setOnInsert: {
       settings: DEFAULT_STORE_SETTINGS,
-      orders: [],
     },
   };
 
@@ -902,12 +905,10 @@ export const updateMyStoreSettings = async (req, res) => {
         dashboardUserId: req.dashboardUser._id,
         settings: nextSettings,
       },
-      $setOnInsert: {
-        orders: [],
-      },
     };
 
     const store = await Store.findOneAndUpdate(queryObj, updateObj, { new: true, upsert: true });
+    const orders = await getOrdersFromMongoDB(linkedStore, store);
 
     return res.status(200).json({
       success: true,
@@ -918,7 +919,7 @@ export const updateMyStoreSettings = async (req, res) => {
           _id: store._id,
           shopDomain: store.shopDomain,
           storeName: store.storeName,
-          orders: Array.isArray(store.orders) ? store.orders : [],
+          orders,
           settings: normalizeStoreSettings(store.settings),
           updatedAt: store.updatedAt,
           linkedAt: linkedStore.linkedAt || null,
@@ -1036,3 +1037,4 @@ export const getDashboardUserShopifyDataByUsername = async (req, res) => {
     });
   }
 };
+

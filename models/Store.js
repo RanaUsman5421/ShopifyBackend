@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 
 const storeSchema = new mongoose.Schema(
   {
@@ -36,34 +36,6 @@ const storeSchema = new mongoose.Schema(
         default: "Manual",
       },
     },
-    orders: [
-      {
-        shopifyOrderId: Number,
-        adminGraphqlApiId: String,
-        orderName: String,
-        orderNumber: Number,
-        customerName: String,
-        email: String,
-        phone: String,
-        address: {
-          address1: String,
-          address2: String,
-          city: String,
-          province: String,
-          zip: String,
-          country: String,
-          countryCode: String,
-          provinceCode: String,
-        },
-        financialStatus: String,
-        fulfillmentStatus: String,
-        itemCount: Number,
-        totalPrice: String,
-        currency: String,
-        createdAt: String,
-        updatedAt: String,
-      },
-    ],
   },
   {
     timestamps: true,
