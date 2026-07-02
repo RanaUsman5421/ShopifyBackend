@@ -85,7 +85,7 @@ orderSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      storeId: { $exists: true, $ne: null },
+      storeId: { $type: "objectId" },
       shopifyOrderId: { $type: "number" },
     },
   }

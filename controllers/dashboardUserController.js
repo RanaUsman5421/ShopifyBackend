@@ -259,6 +259,16 @@ function normalizeDefaultWeight(value) {
   return String(numericWeight);
 }
 
+function storeSettingsMatch(savedSettings, requestedSettings) {
+  const normalizedSavedSettings = normalizeStoreSettings(savedSettings);
+
+  return (
+    normalizedSavedSettings.defaultCourier === requestedSettings.defaultCourier &&
+    normalizedSavedSettings.defaultWeight === requestedSettings.defaultWeight &&
+    normalizedSavedSettings.orderBooking === requestedSettings.orderBooking
+  );
+}
+
 async function findStoreDocumentForLinkedStore(linkedStore) {
   if (!linkedStore) {
     return null;
@@ -858,9 +868,10 @@ export const updateMyStoreSettings = async (req, res) => {
       });
     }
 
+    let existingStoreDoc = null;
     let existingSettings = normalizeStoreSettings();
     try {
-      const existingStoreDoc = await findStoreDocumentForLinkedStore(linkedStore);
+      existingStoreDoc = await findStoreDocumentForLinkedStore(linkedStore);
       existingSettings = existingStoreDoc ? normalizeStoreSettings(existingStoreDoc.settings) : existingSettings;
     } catch (error) {
       existingSettings = normalizeStoreSettings();
@@ -891,23 +902,42 @@ export const updateMyStoreSettings = async (req, res) => {
       }
     }
 
-    const queryObj = {
-      $or: [
-        { shopDomain: normalizeStoreKey(linkedStore.shopDomain) },
-        { storeName: linkedStore.storeName },
-      ],
-    };
+    const normalizedShopDomain = normalizeStoreKey(linkedStore.shopDomain);
+    const queryObj = existingStoreDoc?._id
+      ? { _id: existingStoreDoc._id }
+      : { shopDomain: normalizedShopDomain };
 
     const updateObj = {
       $set: {
-        shopDomain: normalizeStoreKey(linkedStore.shopDomain),
+        shopDomain: normalizedShopDomain,
         storeName: linkedStore.storeName,
         dashboardUserId: req.dashboardUser._id,
         settings: nextSettings,
       },
     };
 
-    const store = await Store.findOneAndUpdate(queryObj, updateObj, { new: true, upsert: true });
+    const store = await Store.findOneAndUpdate(queryObj, updateObj, {
+      new: true,
+      runValidators: true,
+      upsert: !existingStoreDoc,
+    });
+
+    if (!store) {
+      return res.status(500).json({
+        success: false,
+        message: "Store settings were not saved",
+      });
+    }
+
+    const persistedStore = await Store.findById(store._id).lean().maxTimeMS(10000);
+
+    if (!persistedStore || !storeSettingsMatch(persistedStore.settings, nextSettings)) {
+      return res.status(500).json({
+        success: false,
+        message: "Store settings could not be verified in MongoDB",
+      });
+    }
+
     const orders = await getOrdersFromMongoDB(linkedStore, store);
 
     return res.status(200).json({
@@ -920,8 +950,8 @@ export const updateMyStoreSettings = async (req, res) => {
           shopDomain: store.shopDomain,
           storeName: store.storeName,
           orders,
-          settings: normalizeStoreSettings(store.settings),
-          updatedAt: store.updatedAt,
+          settings: normalizeStoreSettings(persistedStore.settings),
+          updatedAt: persistedStore.updatedAt,
           linkedAt: linkedStore.linkedAt || null,
         },
       },
