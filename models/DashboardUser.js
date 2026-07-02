@@ -78,6 +78,23 @@ const dashboardUserSchema = new mongoose.Schema(
         default: null,
       },
     },
+    storeSettings: {
+      defaultCourier: {
+        type: String,
+        enum: ["M&P", "Leopards", "TCS", "BarqRaftaar", "Trax"],
+        default: "M&P",
+      },
+      defaultWeight: {
+        type: String,
+        default: "0.5",
+        trim: true,
+      },
+      orderBooking: {
+        type: String,
+        enum: ["Auto", "Manual"],
+        default: "Manual",
+      },
+    },
     shopifyStores: {
       type: [
         {

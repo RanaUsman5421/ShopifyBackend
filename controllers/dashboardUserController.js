@@ -917,7 +917,7 @@ export const updateMyStoreSettings = async (req, res) => {
     };
 
     const store = await Store.findOneAndUpdate(queryObj, updateObj, {
-      new: true,
+      returnDocument: "after",
       runValidators: true,
       upsert: !existingStoreDoc,
     });
@@ -937,6 +937,9 @@ export const updateMyStoreSettings = async (req, res) => {
         message: "Store settings could not be verified in MongoDB",
       });
     }
+
+    req.dashboardUser.storeSettings = nextSettings;
+    await req.dashboardUser.save({ validateModifiedOnly: true });
 
     const orders = await getOrdersFromMongoDB(linkedStore, store);
 
