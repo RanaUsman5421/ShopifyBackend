@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 
 const orderAddressSchema = new mongoose.Schema(
   {
@@ -10,6 +10,29 @@ const orderAddressSchema = new mongoose.Schema(
     country: String,
     countryCode: String,
     provinceCode: String,
+  },
+  { _id: false }
+);
+
+const lineItemVariantSchema = new mongoose.Schema(
+  {
+    id: String,
+    sku: String,
+    title: String,
+    weight: Number,
+    weightUnit: { type: String, default: "kg" },
+  },
+  { _id: false }
+);
+
+const lineItemSchema = new mongoose.Schema(
+  {
+    id: String,
+    title: String,
+    quantity: Number,
+    weight: Number,
+    weightUnit: { type: String, default: "kg" },
+    variant: lineItemVariantSchema,
   },
   { _id: false }
 );
@@ -45,6 +68,10 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    userName: {
+      type: String,
+      required: true,
+    },
     adminGraphqlApiId: String,
     orderName: String,
     orderNumber: Number,
@@ -57,6 +84,7 @@ const orderSchema = new mongoose.Schema(
     itemCount: Number,
     totalPrice: String,
     currency: String,
+    lineItems: [lineItemSchema],
     createdAt: Date,
     updatedAt: Date,
     syncedAt: {
@@ -66,7 +94,7 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: false,
-    collection: "Orders",
+    collection: "ShopifyOrders",
   }
 );
 

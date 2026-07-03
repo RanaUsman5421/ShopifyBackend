@@ -1,4 +1,4 @@
-﻿import crypto from "crypto";
+import crypto from "crypto";
 import mongoose from "mongoose";
 
 import DashboardUser from "../models/DashboardUser.js";
@@ -40,6 +40,8 @@ const DEFAULT_STORE_SETTINGS = {
   defaultWeight: "0.5",
   orderBooking: "Manual",
 };
+const SHOPIFY_ORDERS_COLLECTION = "ShopifyOrders";
+const LEGACY_ORDERS_COLLECTION = "Orders";
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -80,6 +82,10 @@ function normalizeStoreKey(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function getOrdersFromMongoDB(linkedStore, store = null) {
   try {
     const shopDomain = normalizeStoreKey(linkedStore?.shopDomain || store?.shopDomain);
@@ -116,10 +122,13 @@ async function getOrdersFromMongoDB(linkedStore, store = null) {
       return [];
     }
 
-    const legacyRecord = await mongoose.connection.db.collection("Orders").findOne({
+    const legacyQuery = {
       ...query,
       orders: { $type: "array" },
-    });
+    };
+    const legacyRecord =
+      (await mongoose.connection.db.collection(SHOPIFY_ORDERS_COLLECTION).findOne(legacyQuery)) ||
+      (await mongoose.connection.db.collection(LEGACY_ORDERS_COLLECTION).findOne(legacyQuery));
 
     if (Array.isArray(legacyRecord?.orders)) {
       return legacyRecord.orders;
@@ -269,7 +278,7 @@ function storeSettingsMatch(savedSettings, requestedSettings) {
   );
 }
 
-async function findStoreDocumentForLinkedStore(linkedStore) {
+async function findStoreDocumentForLinkedStore(linkedStore, dashboardUserId = null) {
   if (!linkedStore) {
     return null;
   }
@@ -284,25 +293,37 @@ async function findStoreDocumentForLinkedStore(linkedStore) {
 
   if (storeName) {
     filters.push({ storeName });
+    filters.push({ storeName: { $regex: `^${escapeRegExp(storeName)}$`, $options: "i" } });
   }
 
   if (filters.length === 0) {
     return null;
   }
 
-  const stores = await Store.find(filters.length === 1 ? filters[0] : { $or: filters })
-    .lean()
-    .maxTimeMS(10000);
+  const query = {
+    ...(dashboardUserId
+      ? {
+          $or: [{ dashboardUserId }, { dashboardUserId: null }, { dashboardUserId: { $exists: false } }],
+        }
+      : {}),
+    $or: filters,
+  };
+
+  const stores = await Store.find(query).lean().maxTimeMS(10000);
 
   return (
-    stores.find((store) => normalizeStoreKey(store.shopDomain) === shopDomain) ||
+    stores.find(
+      (store) =>
+        normalizeStoreKey(store.shopDomain) === shopDomain ||
+        normalizeStoreKey(store.storeName) === normalizeStoreKey(storeName)
+    ) ||
     stores[0] ||
     null
   );
 }
 
-async function buildStorePayload(linkedStore) {
-  const store = await findStoreDocumentForLinkedStore(linkedStore);
+async function buildStorePayload(linkedStore, dashboardUserId = null) {
+  const store = await findStoreDocumentForLinkedStore(linkedStore, dashboardUserId);
   const orders = await getOrdersFromMongoDB(linkedStore, store);
 
   if (!store) {
@@ -329,7 +350,9 @@ async function buildStorePayload(linkedStore) {
 
 async function buildUserShopifyDataResponse(user, selectedStoreKey = "") {
   const linkedStores = normalizeUserStores(user);
-  const stores = await Promise.all(linkedStores.map(buildStorePayload));
+  const stores = await Promise.all(
+    linkedStores.map((linkedStore) => buildStorePayload(linkedStore, user?._id))
+  );
   const normalizedSelectedKey = normalizeStoreKey(selectedStoreKey);
   const selectedStore =
     stores.find((store) => {
@@ -871,7 +894,7 @@ export const updateMyStoreSettings = async (req, res) => {
     let existingStoreDoc = null;
     let existingSettings = normalizeStoreSettings();
     try {
-      existingStoreDoc = await findStoreDocumentForLinkedStore(linkedStore);
+      existingStoreDoc = await findStoreDocumentForLinkedStore(linkedStore, req.dashboardUser._id);
       existingSettings = existingStoreDoc ? normalizeStoreSettings(existingStoreDoc.settings) : existingSettings;
     } catch (error) {
       existingSettings = normalizeStoreSettings();
