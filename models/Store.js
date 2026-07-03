@@ -19,7 +19,12 @@ const storeSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    settings: {
+    ShopifyStoreSettings: {
+      username: {
+        type: String,
+        trim: true,
+        lowercase: true,
+      },
       defaultCourier: {
         type: String,
         enum: ["M&P", "Leopards", "TCS", "BarqRaftaar", "Trax"],
@@ -40,6 +45,16 @@ const storeSchema = new mongoose.Schema(
   {
     timestamps: true,
     collection: "stores",
+  }
+);
+
+storeSchema.index(
+  { "ShopifyStoreSettings.username": 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      "ShopifyStoreSettings.username": { $type: "string", $ne: "" },
+    },
   }
 );
 

@@ -71,10 +71,13 @@ function safeUser(user) {
   };
 }
 
-function normalizeStoreSettings(settings) {
+function normalizeStoreSettings(settings, username = null) {
+  const normalizedUsername = normalizeStoreKey(username || settings?.username);
+
   return {
     ...DEFAULT_STORE_SETTINGS,
     ...(settings || {}),
+    username: normalizedUsername || null,
   };
 }
 
@@ -274,8 +277,13 @@ function storeSettingsMatch(savedSettings, requestedSettings) {
   return (
     normalizedSavedSettings.defaultCourier === requestedSettings.defaultCourier &&
     normalizedSavedSettings.defaultWeight === requestedSettings.defaultWeight &&
-    normalizedSavedSettings.orderBooking === requestedSettings.orderBooking
+    normalizedSavedSettings.orderBooking === requestedSettings.orderBooking &&
+    normalizedSavedSettings.username === requestedSettings.username
   );
+}
+
+function getStoreSettings(store) {
+  return store?.ShopifyStoreSettings || store?.settings || null;
 }
 
 async function findStoreDocumentForLinkedStore(linkedStore, dashboardUserId = null) {
@@ -322,16 +330,18 @@ async function findStoreDocumentForLinkedStore(linkedStore, dashboardUserId = nu
   );
 }
 
-async function buildStorePayload(linkedStore, dashboardUserId = null) {
+async function buildStorePayload(linkedStore, dashboardUser = null) {
+  const dashboardUserId = dashboardUser?._id || dashboardUser || null;
   const store = await findStoreDocumentForLinkedStore(linkedStore, dashboardUserId);
   const orders = await getOrdersFromMongoDB(linkedStore, store);
+  const username = dashboardUser?.username || getStoreSettings(store)?.username || null;
 
   if (!store) {
     return {
       shopDomain: linkedStore?.shopDomain || null,
       storeName: linkedStore?.storeName || linkedStore?.shopDomain || null,
       orders,
-      settings: normalizeStoreSettings(),
+      settings: normalizeStoreSettings(null, username),
       updatedAt: null,
       linkedAt: linkedStore?.linkedAt || null,
     };
@@ -342,7 +352,7 @@ async function buildStorePayload(linkedStore, dashboardUserId = null) {
     shopDomain: store.shopDomain || linkedStore?.shopDomain || null,
     storeName: store.storeName,
     orders,
-    settings: normalizeStoreSettings(store.settings),
+    settings: normalizeStoreSettings(getStoreSettings(store), username),
     updatedAt: store.updatedAt,
     linkedAt: linkedStore?.linkedAt || null,
   };
@@ -351,7 +361,7 @@ async function buildStorePayload(linkedStore, dashboardUserId = null) {
 async function buildUserShopifyDataResponse(user, selectedStoreKey = "") {
   const linkedStores = normalizeUserStores(user);
   const stores = await Promise.all(
-    linkedStores.map((linkedStore) => buildStorePayload(linkedStore, user?._id))
+    linkedStores.map((linkedStore) => buildStorePayload(linkedStore, user))
   );
   const normalizedSelectedKey = normalizeStoreKey(selectedStoreKey);
   const selectedStore =
@@ -373,7 +383,7 @@ async function buildUserShopifyDataResponse(user, selectedStoreKey = "") {
   };
 }
 
-async function upsertLinkedStoreDocument({ shopDomain, storeName, dashboardUserId }) {
+async function upsertLinkedStoreDocument({ shopDomain, storeName, dashboardUserId, username }) {
   const normalizedShopDomain = normalizeStoreKey(shopDomain);
   const normalizedStoreName = String(storeName || shopDomain || "").trim();
 
@@ -386,9 +396,12 @@ async function upsertLinkedStoreDocument({ shopDomain, storeName, dashboardUserI
       shopDomain: normalizedShopDomain,
       storeName: normalizedStoreName,
       dashboardUserId,
+      "ShopifyStoreSettings.username": normalizeStoreKey(username),
     },
     $setOnInsert: {
-      settings: DEFAULT_STORE_SETTINGS,
+      "ShopifyStoreSettings.defaultCourier": DEFAULT_STORE_SETTINGS.defaultCourier,
+      "ShopifyStoreSettings.defaultWeight": DEFAULT_STORE_SETTINGS.defaultWeight,
+      "ShopifyStoreSettings.orderBooking": DEFAULT_STORE_SETTINGS.orderBooking,
     },
   };
 
@@ -760,6 +773,7 @@ export const linkShopifyStoreByToken = async (req, res) => {
         shopDomain: normalizedShopDomain,
         storeName: normalizedStoreName,
         dashboardUserId: user._id,
+        username: user.username,
       });
     } catch (storeError) {
       console.error("Error updating linked store document:", storeError);
@@ -892,18 +906,21 @@ export const updateMyStoreSettings = async (req, res) => {
     }
 
     let existingStoreDoc = null;
-    let existingSettings = normalizeStoreSettings();
+    let existingSettings = normalizeStoreSettings(null, req.dashboardUser.username);
     try {
       existingStoreDoc = await findStoreDocumentForLinkedStore(linkedStore, req.dashboardUser._id);
-      existingSettings = existingStoreDoc ? normalizeStoreSettings(existingStoreDoc.settings) : existingSettings;
+      existingSettings = existingStoreDoc
+        ? normalizeStoreSettings(getStoreSettings(existingStoreDoc), req.dashboardUser.username)
+        : existingSettings;
     } catch (error) {
-      existingSettings = normalizeStoreSettings();
+      existingSettings = normalizeStoreSettings(null, req.dashboardUser.username);
     }
 
     const nextSettings = {
       defaultCourier: requestSettings.defaultCourier ?? existingSettings.defaultCourier,
       defaultWeight: requestSettings.defaultWeight ?? existingSettings.defaultWeight,
       orderBooking: requestSettings.orderBooking ?? existingSettings.orderBooking,
+      username: req.dashboardUser.username,
     };
 
     const normalizedWeight = normalizeDefaultWeight(nextSettings.defaultWeight);
@@ -917,7 +934,11 @@ export const updateMyStoreSettings = async (req, res) => {
     nextSettings.defaultWeight = normalizedWeight;
 
     for (const [key, value] of Object.entries(nextSettings)) {
-      if (key !== "defaultWeight" && !(Array.isArray(STORE_SETTING_OPTIONS[key]) && STORE_SETTING_OPTIONS[key].includes(value))) {
+      if (
+        key !== "defaultWeight" &&
+        key !== "username" &&
+        !(Array.isArray(STORE_SETTING_OPTIONS[key]) && STORE_SETTING_OPTIONS[key].includes(value))
+      ) {
         return res.status(400).json({
           success: false,
           message: `Invalid ${key} setting`,
@@ -935,7 +956,10 @@ export const updateMyStoreSettings = async (req, res) => {
         shopDomain: normalizedShopDomain,
         storeName: linkedStore.storeName,
         dashboardUserId: req.dashboardUser._id,
-        settings: nextSettings,
+        ShopifyStoreSettings: nextSettings,
+      },
+      $unset: {
+        settings: "",
       },
     };
 
@@ -954,14 +978,18 @@ export const updateMyStoreSettings = async (req, res) => {
 
     const persistedStore = await Store.findById(store._id).lean().maxTimeMS(10000);
 
-    if (!persistedStore || !storeSettingsMatch(persistedStore.settings, nextSettings)) {
+    if (!persistedStore || !storeSettingsMatch(getStoreSettings(persistedStore), nextSettings)) {
       return res.status(500).json({
         success: false,
         message: "Store settings could not be verified in MongoDB",
       });
     }
 
-    req.dashboardUser.storeSettings = nextSettings;
+    req.dashboardUser.storeSettings = {
+      defaultCourier: nextSettings.defaultCourier,
+      defaultWeight: nextSettings.defaultWeight,
+      orderBooking: nextSettings.orderBooking,
+    };
     await req.dashboardUser.save({ validateModifiedOnly: true });
 
     const orders = await getOrdersFromMongoDB(linkedStore, store);
@@ -976,7 +1004,7 @@ export const updateMyStoreSettings = async (req, res) => {
           shopDomain: store.shopDomain,
           storeName: store.storeName,
           orders,
-          settings: normalizeStoreSettings(persistedStore.settings),
+          settings: normalizeStoreSettings(getStoreSettings(persistedStore), req.dashboardUser.username),
           updatedAt: persistedStore.updatedAt,
           linkedAt: linkedStore.linkedAt || null,
         },
