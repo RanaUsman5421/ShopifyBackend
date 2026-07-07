@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import courierRoutes from './routes/courier.Routes.js';
 import mongoose from 'mongoose';
 
+dotenv.config();
 
 const app = express();
 app.use(morgan('dev'));
