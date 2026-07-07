@@ -80,7 +80,27 @@ const orderSchema = new mongoose.Schema(
     phone: String,
     address: orderAddressSchema,
     financialStatus: String,
-    fulfillmentStatus: String,
+    fulfillmentStatus: {
+      type: String,
+      enum: ["UNFULFILLED", "FULFILLED", "Fulfilled", "Error"],
+      default: "UNFULFILLED",
+    },
+    trackNumber: {
+      type: String,
+      default: "",
+    },
+    bookedCourier: {
+      type: String,
+      default: "",
+    },
+    weightGrams: {
+      type: Number,
+      default: null,
+    },
+    bookingError: {
+      type: String,
+      default: "",
+    },
     itemCount: Number,
     totalPrice: String,
     currency: String,
@@ -121,4 +141,4 @@ orderSchema.index(
 orderSchema.index({ storeId: 1, createdAt: -1 });
 orderSchema.index({ dashboardUserId: 1, createdAt: -1 });
 
-export default mongoose.model("Order", orderSchema);
+export default mongoose.model("ShopifyOrders", orderSchema);

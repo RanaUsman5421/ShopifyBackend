@@ -1,5 +1,5 @@
 import Store from "../models/Store.js";
-import Order from "../models/Order.js";
+import shopifyOrdersModal from '../models/shopifyOrders.modal.js';
 
 function normalizeStoreKey(value) {
   return String(value || "").trim().toLowerCase();
@@ -24,7 +24,7 @@ async function getOrdersForStore(store) {
     return Array.isArray(store?.orders) ? store.orders : [];
   }
 
-  const orders = await Order.find(filters.length === 1 ? filters[0] : { $or: filters })
+  const orders = await ShopifyOrders.find(filters.length === 1 ? filters[0] : { $or: filters })
     .sort({ createdAt: -1, orderNumber: -1 })
     .lean()
     .maxTimeMS(10000);

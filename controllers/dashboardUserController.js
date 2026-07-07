@@ -1,9 +1,8 @@
 import crypto from "crypto";
 import mongoose from "mongoose";
-
 import DashboardUser from "../models/DashboardUser.js";
 import Store from "../models/Store.js";
-import Order from "../models/Order.js";
+import shopifyOrdersModal from '../models/shopifyOrders.modal.js';
 
 const sampleUsers = [
   {
@@ -112,7 +111,7 @@ async function getOrdersFromMongoDB(linkedStore, store = null) {
     }
 
     const query = filters.length === 1 ? filters[0] : { $or: filters };
-    const orders = await Order.find(query)
+    const orders = await shopifyOrdersModal.find(query)
       .sort({ createdAt: -1, orderNumber: -1 })
       .lean()
       .maxTimeMS(10000);
@@ -283,7 +282,7 @@ function storeSettingsMatch(savedSettings, requestedSettings) {
 }
 
 function getStoreSettings(store) {
-  return store?.ShopifyStoreSettings || store?.settings || null;
+  return store?.settings || null;
 }
 
 async function findStoreDocumentForLinkedStore(linkedStore, dashboardUserId = null) {
@@ -391,17 +390,17 @@ async function upsertLinkedStoreDocument({ shopDomain, storeName, dashboardUserI
     return null;
   }
 
-  const update = {
+ const update = {
     $set: {
       shopDomain: normalizedShopDomain,
       storeName: normalizedStoreName,
       dashboardUserId,
-      "ShopifyStoreSettings.username": normalizeStoreKey(username),
+      "settings.username": normalizeStoreKey(username),
     },
     $setOnInsert: {
-      "ShopifyStoreSettings.defaultCourier": DEFAULT_STORE_SETTINGS.defaultCourier,
-      "ShopifyStoreSettings.defaultWeight": DEFAULT_STORE_SETTINGS.defaultWeight,
-      "ShopifyStoreSettings.orderBooking": DEFAULT_STORE_SETTINGS.orderBooking,
+      "settings.defaultCourier": DEFAULT_STORE_SETTINGS.defaultCourier,
+      "settings.defaultWeight": DEFAULT_STORE_SETTINGS.defaultWeight,
+      "settings.orderBooking": DEFAULT_STORE_SETTINGS.orderBooking,
     },
   };
 
@@ -956,10 +955,10 @@ export const updateMyStoreSettings = async (req, res) => {
         shopDomain: normalizedShopDomain,
         storeName: linkedStore.storeName,
         dashboardUserId: req.dashboardUser._id,
-        ShopifyStoreSettings: nextSettings,
+        settings: nextSettings,
       },
       $unset: {
-        settings: "",
+        ShopifyStoreSettings: "",
       },
     };
 
