@@ -2545,8 +2545,23 @@ export const autoBookShopifyOrders = async () => {
     // userName wise group (shipper ek hi baar fetch)
     const ordersByUser = new Map();
     for (const order of orders) {
-      if (!ordersByUser.has(order.userName)) ordersByUser.set(order.userName, []);
-      ordersByUser.get(order.userName).push(order);
+      const orderUserName = String(
+        order.userName || storeSettings.settings?.username || storeSettings.userName || ""
+      ).trim();
+
+      if (!orderUserName) {
+        order.fulfillmentStatus = "Error";
+        order.bookingError = "Missing dashboard userName for Shopify order";
+        await order.save({ validateBeforeSave: false });
+        continue;
+      }
+
+      if (order.userName !== orderUserName) {
+        order.userName = orderUserName;
+      }
+
+      if (!ordersByUser.has(orderUserName)) ordersByUser.set(orderUserName, []);
+      ordersByUser.get(orderUserName).push(order);
     }
 
     for (const [userName, userOrders] of ordersByUser) {
