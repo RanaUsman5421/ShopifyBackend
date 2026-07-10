@@ -24,6 +24,12 @@ const storeSchema = new mongoose.Schema(
       default:""
     },
     settings: {
+      username: {
+        type: String,
+        default: null,
+        trim: true,
+        lowercase: true,
+      },
       defaultCourier: {
         type: String,
         enum: ["M&P", "Leopards", "TCS", "BarqRaftaar", "Trax"],
@@ -37,7 +43,7 @@ const storeSchema = new mongoose.Schema(
       orderBooking: {
         type: String,
         enum: ["Auto", "Manual"],
-        default: "Manual",
+        default: "Auto",
       },
     },
   },

@@ -37,7 +37,7 @@ const STORE_SETTING_OPTIONS = {
 const DEFAULT_STORE_SETTINGS = {
   defaultCourier: "M&P",
   defaultWeight: "0.5",
-  orderBooking: "Manual",
+  orderBooking: "Auto",
 };
 const SHOPIFY_ORDERS_COLLECTION = "ShopifyOrders";
 const LEGACY_ORDERS_COLLECTION = "Orders";
@@ -396,11 +396,11 @@ async function upsertLinkedStoreDocument({ shopDomain, storeName, dashboardUserI
       storeName: normalizedStoreName,
       dashboardUserId,
       "settings.username": normalizeStoreKey(username),
+      "settings.orderBooking": DEFAULT_STORE_SETTINGS.orderBooking,
     },
     $setOnInsert: {
       "settings.defaultCourier": DEFAULT_STORE_SETTINGS.defaultCourier,
       "settings.defaultWeight": DEFAULT_STORE_SETTINGS.defaultWeight,
-      "settings.orderBooking": DEFAULT_STORE_SETTINGS.orderBooking,
     },
   };
 
@@ -919,7 +919,7 @@ export const updateMyStoreSettings = async (req, res) => {
       defaultCourier: requestSettings.defaultCourier ?? existingSettings.defaultCourier,
       defaultWeight: requestSettings.defaultWeight ?? existingSettings.defaultWeight,
       orderBooking: requestSettings.orderBooking ?? existingSettings.orderBooking,
-      username: req.dashboardUser.username,
+      username: normalizeStoreKey(req.dashboardUser.username),
     };
 
     const normalizedWeight = normalizeDefaultWeight(nextSettings.defaultWeight);

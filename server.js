@@ -6,7 +6,6 @@ import courierRoutes from './routes/courier.Routes.js';
 import mongoose from 'mongoose';
 
 dotenv.config();
-
 const app = express();
 app.use(morgan('dev'));
 const port = process.env.PORT || 5000;
