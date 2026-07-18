@@ -2037,6 +2037,44 @@ const DAAK_API_SECRET="OvUJoA9pFfcntWr8yxNV"
 // ── Company priority chain — sirf implemented couriers ─────────
 const ROTATION_COURIERS = ["Leopards", "M&P", "Trax"]; // smart city-rotation sirf inhi mein
 
+// ── Normalize store settings with safe defaults ──
+const normalizeStoreSettings = (settings) => {
+  const validCouriers = ["M&P", "Leopards", "TCS", "BarqRaftaar", "Trax"];
+  const validBookingModes = ["Auto", "Manual"];
+
+  const defaultCourier = settings?.defaultCourier;
+  const defaultWeight = settings?.defaultWeight;
+  const orderBooking = settings?.orderBooking;
+
+  // Normalize courier
+  const normalizedCourier = validCouriers.includes(defaultCourier)
+    ? defaultCourier
+    : "M&P";
+
+  // Normalize weight - ensure it's a valid positive number with max 2 decimal places
+  let normalizedWeight = "0.5"; // default weight in kg
+  if (defaultWeight) {
+    const weightStr = String(defaultWeight).trim();
+    if (/^\d+(\.\d{1,2})?$/.test(weightStr)) {
+      const weightNum = parseFloat(weightStr);
+      if (weightNum > 0) {
+        normalizedWeight = weightStr;
+      }
+    }
+  }
+
+  // Normalize booking mode
+  const normalizedBookingMode = validBookingModes.includes(orderBooking)
+    ? orderBooking
+    : "Auto";
+
+  return {
+    defaultCourier: normalizedCourier,
+    defaultWeight: normalizedWeight,
+    orderBooking: normalizedBookingMode,
+  };
+};
+
 const buildCourierChain = (defaultCourier) => {
   if (defaultCourier === "BarqRaftar") {
     // BarqRaftar sirf tab try hoga jab wahi default ho; fail hone par rotation companies fixed order mein
@@ -2538,8 +2576,10 @@ export const autoBookShopifyOrders = async () => {
       continue; // manual store — skip, status New hi rahega
     }
 
-    const defaultCourier = storeSettings.settings?.defaultCourier || "M&P";
-    const defaultWeightGrams = parseFloat(storeSettings.settings?.defaultWeight) || 500;
+    // Normalize settings with safe defaults
+    const normalizedSettings = normalizeStoreSettings(storeSettings.settings);
+    const defaultCourier = normalizedSettings.defaultCourier;
+    const defaultWeightKg = parseFloat(normalizedSettings.defaultWeight) || 0.5;
     const chain = buildCourierChain(defaultCourier);
 
     // userName wise group (shipper ek hi baar fetch)
@@ -2646,7 +2686,7 @@ export const autoBookShopifyOrders = async () => {
               consigneePhone,
               consigneeAddress,
               quantity,
-              netWeightKg: defaultWeightGrams / 1000,
+              netWeightKg: defaultWeightKg,
               codAmount,
               productName,
               referenceNumber,
@@ -2661,7 +2701,7 @@ export const autoBookShopifyOrders = async () => {
               consigneePhone,
               consigneeAddress,
               quantity,
-              netWeightKg: defaultWeightGrams / 1000,
+              netWeightKg: defaultWeightKg,
               codAmount,
               productName,
               referenceNumber,
@@ -2676,7 +2716,7 @@ export const autoBookShopifyOrders = async () => {
               consigneePhone,
               consigneeAddress,
               quantity,
-              netWeightKg: defaultWeightGrams / 1000,
+              netWeightKg: defaultWeightKg,
               codAmount,
               referenceNumber,
               userReferenceNumber,
@@ -2689,7 +2729,7 @@ export const autoBookShopifyOrders = async () => {
               consigneePhone,
               consigneeAddress,
               quantity,
-              netWeightGrams: defaultWeightGrams,
+              netWeightGrams: Math.round(defaultWeightKg * 1000),
               codAmount,
               productName,
               referenceNumber,
@@ -2699,7 +2739,7 @@ export const autoBookShopifyOrders = async () => {
             });
           }
 
-          order.weightGrams = defaultWeightGrams;
+          order.weightGrams = Math.round(defaultWeightKg * 1000);
           if (result.success) {
             order.fulfillmentStatus = "Fulfilled";
             order.trackNumber = result.trackNumber;
