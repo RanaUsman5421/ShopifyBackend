@@ -2039,12 +2039,19 @@ const ROTATION_COURIERS = ["Leopards", "M&P", "Trax"]; // smart city-rotation si
 
 // ── Normalize store settings with safe defaults ──
 const normalizeStoreSettings = (settings) => {
-  const validCouriers = ["M&P", "Leopards", "TCS", "BarqRaftaar", "Trax"];
+  const validCouriers = ["M&P", "Leopards", "BarqRaftaar", "Trax"];
   const validBookingModes = ["Auto", "Manual"];
+  const validServicesByCourer = {
+    "M&P": ["Overnight", "SecondDay"],
+    "Leopards": ["Overnight", "Detain", "Overland"],
+    "BarqRaftaar": ["Overnight", "Detain", "Overland"],
+    "Trax": ["Overnight", "Detain", "Overland"],
+  };
 
   const defaultCourier = settings?.defaultCourier;
   const defaultWeight = settings?.defaultWeight;
   const orderBooking = settings?.orderBooking;
+  const defaultService = settings?.defaultService;
 
   // Normalize courier
   const normalizedCourier = validCouriers.includes(defaultCourier)
@@ -2068,10 +2075,17 @@ const normalizeStoreSettings = (settings) => {
     ? orderBooking
     : "Auto";
 
+  // Normalize service - must be valid for the courier
+  const validServices = validServicesByCourer[normalizedCourier] || ["Overnight"];
+  const normalizedService = validServices.includes(defaultService)
+    ? defaultService
+    : "Overnight";
+
   return {
     defaultCourier: normalizedCourier,
     defaultWeight: normalizedWeight,
     orderBooking: normalizedBookingMode,
+    defaultService: normalizedService,
   };
 };
 
@@ -2572,21 +2586,31 @@ export const autoBookShopifyOrders = async () => {
 
   for (const [shopDomain, orders] of ordersByShop) {
     const storeSettings = await Store.findOne({ shopDomain });
-    if (!storeSettings || storeSettings.settings?.orderBooking !== "Auto") {
+    if (!storeSettings) {
+      continue;
+    }
+
+    // Check both ShopifyStoreSettings and settings field names for compatibility
+    const storeSettingsData = storeSettings.ShopifyStoreSettings || storeSettings.settings || {};
+    const orderBookingMode = storeSettingsData.orderBooking || "Auto";
+
+    // Skip if booking mode is Manual
+    if (orderBookingMode !== "Auto") {
       continue; // manual store — skip, status New hi rahega
     }
 
     // Normalize settings with safe defaults
-    const normalizedSettings = normalizeStoreSettings(storeSettings.settings);
+    const normalizedSettings = normalizeStoreSettings(storeSettingsData);
     const defaultCourier = normalizedSettings.defaultCourier;
     const defaultWeightKg = parseFloat(normalizedSettings.defaultWeight) || 0.5;
+    const defaultService = normalizedSettings.defaultService || "Overnight";
     const chain = buildCourierChain(defaultCourier);
 
     // userName wise group (shipper ek hi baar fetch)
     const ordersByUser = new Map();
     for (const order of orders) {
       const orderUserName = String(
-        order.userName || storeSettings.settings?.username || storeSettings.userName || ""
+        order.userName || storeSettingsData.username || storeSettings.userName || ""
       ).trim();
 
       if (!orderUserName) {
@@ -2692,6 +2716,7 @@ export const autoBookShopifyOrders = async () => {
               referenceNumber,
               userReferenceNumber,
               shipperInfo,
+              service: defaultService,
             });
           } else if (chosenCompany === "Trax") {
             result = await bookTraxCore({
@@ -2707,6 +2732,7 @@ export const autoBookShopifyOrders = async () => {
               referenceNumber,
               userReferenceNumber,
               shipperInfo,
+              service: defaultService,
             });
           } else if (chosenCompany === "BarqRaftar") {
             result = await bookDaakCore({
@@ -2721,6 +2747,7 @@ export const autoBookShopifyOrders = async () => {
               referenceNumber,
               userReferenceNumber,
               shipperInfo,
+              service: defaultService,
             });
           } else {
             result = await bookMPCore({
@@ -2736,6 +2763,7 @@ export const autoBookShopifyOrders = async () => {
               userReferenceNumber,
               shipperInfo,
               locationId: shipper.mnpLocationId,
+              service: defaultService,
             });
           }
 
