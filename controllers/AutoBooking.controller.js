@@ -2361,7 +2361,7 @@ const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, 
   const shipper = shippers[0];
 
   const zoneName = normalizedCityToZone[String(destinationCityName).trim().toUpperCase()] || "Unknown";
-  const dc = await getDeliveryCharge(shipper, zoneName, Number(netWeightGrams), destinationCityName, shipper.mnpCityName || "Lahore", "Overnight", "M&P");
+  const dc = await getDeliveryCharge(shipper, zoneName, Number(netWeightGrams) / 1000, destinationCityName, shipper.mnpCityName || "Lahore", "Overnight", "M&P");
 
   const creditResult = await checkShipperCredit(shipperInfo.userName, dc, Number(codAmount) || 0);
   if (!creditResult.allowed) return { success: false, error: creditResult.message };
