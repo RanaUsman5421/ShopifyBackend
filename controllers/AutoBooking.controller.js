@@ -2164,12 +2164,12 @@ const buildShipperInfo = (shipper, companyName, userName) => ({
 });
 
 // ── Har company ka actual booking call (existing controllers jaisa hi logic, bas req/res ke bagair) ──
-const bookLeopardsCore = async ({ destinationCityId, destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightKg, codAmount, productName, referenceNumber, userReferenceNumber, shipperInfo }) => {
+const bookLeopardsCore = async ({ destinationCityId, destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightKg, codAmount, productName, referenceNumber, userReferenceNumber, shipperInfo, service }) => {
   const shipper = await shipperModal.findOne({ shipperName: shipperInfo.shipperName });
   if (!shipper) return { success: false, error: `Shipper not found: ${shipperInfo.shipperName}` };
 
   const zoneName = normalizedCityToZone[String(destinationCityName).trim().toUpperCase()] || "Unknown";
-  const dc = await getDeliveryCharge(shipper, zoneName, netWeightKg, destinationCityName, shipper.leopardsCityName, "overnight", "Leopards");
+  const dc = await getDeliveryCharge(shipper, zoneName, netWeightKg, destinationCityName, shipper.leopardsCityName, service || "Overnight", "Leopards");
 
   const creditResult = await checkShipperCredit(shipperInfo.userName, dc, Number(codAmount) || 0);
   if (!creditResult.allowed) return { success: false, error: creditResult.message };
@@ -2200,7 +2200,7 @@ const bookLeopardsCore = async ({ destinationCityId, destinationCityName, consig
     consignment_phone_three: "",
     consignment_address: consigneeAddress,
     special_instructions: finalInstructions,
-    shipment_type: "overnight",
+    shipment_type: (service || "overnight").toString().toLowerCase(),
     custom_data: [],
     return_address: "",
     return_city: "",
@@ -2242,7 +2242,7 @@ const bookLeopardsCore = async ({ destinationCityId, destinationCityName, consig
     referenceNumber: referenceNumber || "",
     userReferenceNumber: userReferenceNumber || "",
     specialInstructions: finalInstructions,
-    shipmentType: "overnight",
+    shipmentType: (service ? (service.charAt(0).toUpperCase() + service.slice(1).toLowerCase()) : "Overnight"),
     shipperInfo: {
       pickupAddress: shipperInfo.pickupAddress,
       shipperPhone: shipperInfo.shipperPhone,
@@ -2261,12 +2261,12 @@ const bookLeopardsCore = async ({ destinationCityId, destinationCityName, consig
   return { success: true, trackNumber: response.data.track_number, deliveryCharge: dc };
 };
 
-const bookTraxCore = async ({ destinationCityId, destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightKg, codAmount, productName, referenceNumber, userReferenceNumber, shipperInfo }) => {
+const bookTraxCore = async ({ destinationCityId, destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightKg, codAmount, productName, referenceNumber, userReferenceNumber, shipperInfo, service }) => {
   const shipper = await shipperModal.findOne({ traxId: shipperInfo.shipmentId });
   if (!shipper) return { success: false, error: `Shipper not found for traxId: ${shipperInfo.shipmentId}` };
 
   const zoneName = normalizedCityToZone[String(destinationCityName).trim().toUpperCase()] || "Unknown";
-  const dc = await getDeliveryCharge(shipper, zoneName, netWeightKg, destinationCityName, shipper.traxCityName, "overnight", "Trax");
+  const dc = await getDeliveryCharge(shipper, zoneName, netWeightKg, destinationCityName, shipper.traxCityName, service || "Overnight", "Trax");
 
   const creditResult = await checkShipperCredit(shipperInfo.userName, dc, Number(codAmount) || 0);
   if (!creditResult.allowed) return { success: false, error: creditResult.message };
@@ -2337,7 +2337,7 @@ const bookTraxCore = async ({ destinationCityId, destinationCityName, consigneeN
     referenceNumber: referenceNumber || "",
     userReferenceNumber: userReferenceNumber || "",
     specialInstructions: finalInstructions,
-    shipmentType: "overnight",
+    shipmentType: (service ? (service.charAt(0).toUpperCase() + service.slice(1).toLowerCase()) : "Overnight"),
     shipperInfo: {
       pickupAddress: shipperInfo.pickupAddress,
       shipperPhone: shipperInfo.shipperPhone,
@@ -2355,13 +2355,13 @@ const bookTraxCore = async ({ destinationCityId, destinationCityName, consigneeN
   return { success: true, trackNumber: response.data.tracking_number, deliveryCharge: dc };
 };
 
-const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightGrams, codAmount, productName, referenceNumber, userReferenceNumber, shipperInfo, locationId }) => {
+const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightGrams, codAmount, productName, referenceNumber, userReferenceNumber, shipperInfo, locationId, service }) => {
   const shippers = await shipperModal.find({ mnpSubAccountId: shipperInfo.shipmentId, mnpLocationId: locationId });
   if (!shippers?.length) return { success: false, error: `Shipper not found for M&P subaccount: ${shipperInfo.shipmentId}` };
   const shipper = shippers[0];
 
   const zoneName = normalizedCityToZone[String(destinationCityName).trim().toUpperCase()] || "Unknown";
-  const dc = await getDeliveryCharge(shipper, zoneName, Number(netWeightGrams) / 1000, destinationCityName, shipper.mnpCityName || "Lahore", "Overnight", "M&P");
+  const dc = await getDeliveryCharge(shipper, zoneName, Number(netWeightGrams) / 1000, destinationCityName, shipper.mnpCityName || "Lahore", service || "Overnight", "M&P");
 
   const creditResult = await checkShipperCredit(shipperInfo.userName, dc, Number(codAmount) || 0);
   if (!creditResult.allowed) return { success: false, error: creditResult.message };
@@ -2373,7 +2373,7 @@ const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, 
     const [created] = await leopardsOrdersmodal.create([{
       companyId,
       companyName: "M&P",
-         source: "Shopify",
+        source: "Shopify",
       destinationCityName: String(destinationCityName),
       consigneePhone,
       whatsappNumber: formatWhatsappPhoneNumber(consigneePhone),
@@ -2390,7 +2390,7 @@ const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, 
       referenceNumber: referenceNumber || "",
       userReferenceNumber: userReferenceNumber || "",
       specialInstructions: "Handle with care fragile product",
-      shipmentType: "Overnight",
+      shipmentType: (service ? (service.charAt(0).toUpperCase() + service.slice(1).toLowerCase()) : "Overnight"),
       locationId,
       mnpSubAccountId: shipper.mnpSubAccountId,
       shipperInfo: {
@@ -2427,7 +2427,7 @@ const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, 
     custRefNo: companyId,
     productDetails: productName || "General item",
     fragile: "Yes",
-    Service: "O",
+    Service: (service && service.toString().toLowerCase().includes('second')) ? 'S' : 'O',
     Remarks: "Handle with care fragile product",
     InsuranceValue: 0,
     locationID: locationId,
@@ -2462,13 +2462,13 @@ const bookMPCore = async ({ destinationCityName, consigneeName, consigneePhone, 
 };
 
 
-const bookDaakCore = async ({ destinationCityId, destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightKg, codAmount, referenceNumber, userReferenceNumber, shipperInfo }) => {
+const bookDaakCore = async ({ destinationCityId, destinationCityName, consigneeName, consigneePhone, consigneeAddress, quantity, netWeightKg, codAmount, referenceNumber, userReferenceNumber, shipperInfo, service }) => {
   const shipper = await shipperModal.findOne({ shipperName: shipperInfo.shipperName });
   if (!shipper) return { success: false, error: `Shipper not found: ${shipperInfo.shipperName}` };
   if (!shipper.daakCityId || !shipper.daakId) return { success: false, error: "Shipper missing Daak city ID or Daak ID" };
 
   const zoneName = normalizedCityToZone[String(destinationCityName).trim().toUpperCase()] || "Unknown";
-  const dc = await getDeliveryCharge(shipper, zoneName, netWeightKg, destinationCityName, shipper.daakCityName, "overnight", "BarqRaftar");
+  const dc = await getDeliveryCharge(shipper, zoneName, netWeightKg, destinationCityName, shipper.daakCityName, service || "Overnight", "BarqRaftar");
 
   const creditResult = await checkShipperCredit(shipperInfo.userName, dc, Number(codAmount) || 0);
   if (!creditResult.allowed) return { success: false, error: creditResult.message };
@@ -2547,7 +2547,7 @@ const bookDaakCore = async ({ destinationCityId, destinationCityName, consigneeN
     referenceNumber: shipperInfo.userName,
     userReferenceNumber: userReferenceNumber || "",
     specialInstructions: finalInstructions,
-    shipmentType: "overnight",
+    shipmentType: (service ? (service.charAt(0).toUpperCase() + service.slice(1).toLowerCase()) : "Overnight"),
     shipperInfo: {
       pickupAddress: shipperInfo.pickupAddress,
       shipperPhone: shipperInfo.shipperPhone,
