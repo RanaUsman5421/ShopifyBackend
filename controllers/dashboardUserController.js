@@ -50,7 +50,7 @@ function createLinkToken() {
   return `sdu_${crypto.randomBytes(24).toString("base64url")}`;
 }
 
-function assignLinkToken(user) {e
+function assignLinkToken(user) {
   const token = createLinkToken();
 
   user.linkTokenHash = hashToken(token);
